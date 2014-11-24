@@ -1,15 +1,15 @@
 package com.mysticcoders.wicket.mousetrap;
 
 import org.apache.wicket.Component;
-import org.apache.wicket.ajax.AbstractDefaultAjaxBehavior;
 import org.apache.wicket.behavior.Behavior;
 import org.apache.wicket.markup.head.IHeaderResponse;
 import org.apache.wicket.markup.head.JavaScriptHeaderItem;
 import org.apache.wicket.markup.head.OnDomReadyHeaderItem;
-import org.apache.wicket.request.resource.JavaScriptResourceReference;
+import org.apache.wicket.util.lang.Args;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Binding for mousetrap.js
@@ -21,128 +21,141 @@ import java.util.Map;
 public class Mousetrap extends Behavior {
     private static final long serialVersionUID = 1L;
 
-    private Map<KeyBinding, AbstractDefaultAjaxBehavior> bindings = new HashMap<KeyBinding, AbstractDefaultAjaxBehavior>();
-    private Map<KeyBinding, AbstractDefaultAjaxBehavior> globalBindings = new HashMap<KeyBinding, AbstractDefaultAjaxBehavior>();
-    private Map<KeyBinding, AbstractDefaultAjaxBehavior> defaultBindings = new HashMap<KeyBinding, AbstractDefaultAjaxBehavior>();
-    private Map<KeyBinding, AbstractDefaultAjaxBehavior> defaultGlobalBindings = new HashMap<KeyBinding, AbstractDefaultAjaxBehavior>();
-
-    private static final int BIND = 0;
-    private static final int BIND_GLOBAL = 1;
-    private static final int BIND_DEFAULT = 2;
-    private static final int BIND_DEFAULT_GLOBAL = 3;
-
     /**
-     * Convenience method for returning a mousetrap binding call
-     *
-     * @param type are we global, a default, or a regular bind
-     * @param bindings list of bindings
-     * @return Mousetrap bindings
+     * The type of the key binding
      */
-    private StringBuffer getMousetrapBinds(int type, Map<KeyBinding, AbstractDefaultAjaxBehavior> bindings) {
-        StringBuffer mousetrapBinds = new StringBuffer();
-        for (Map.Entry<KeyBinding, AbstractDefaultAjaxBehavior> entry : bindings.entrySet()) {
-            mousetrapBinds.append("Mousetrap.").append(type == BIND_GLOBAL || type == BIND_DEFAULT_GLOBAL ? "bindGlobal" : "bind").append("(")
-                    .append(entry.getKey())
-                    .append(", function(e) { ");
-            if(type == BIND_DEFAULT || type == BIND_DEFAULT_GLOBAL) {
-                mousetrapBinds.append("console.log(e); if (e.preventDefault) {e.preventDefault();} else {e.returnValue = false;}");
-            }
-            mousetrapBinds.append(entry.getValue().getCallbackScript())
-                    .append(" }");
-            if(entry.getKey().getEventType()!=null) {
-                mousetrapBinds.append(", '")
-                        .append(entry.getKey().getEventType())
-                        .append("'");
-            }
-            mousetrapBinds.append(");\n");
-        }
+    public enum BindType {
+        /**
+         * The key binding won't be fired when the focus is on a text field or text area
+         */
+        NORMAL,
 
-        return mousetrapBinds;
+        /**
+         * The key binding will be fired when the focus is on a text field or text area
+         */
+        GLOBAL,
+
+        /**
+         * The key binding won't be fired when the focus is on a text field or text area and the
+         * default behavior of the JavaScript event will be prevented and stopped
+         */
+        DEFAULT,
+
+        /**
+         * The key binding will be fired when the focus is on a text field or text area and the
+         * default behavior of the JavaScript event will be prevented and stopped
+         */
+        DEFAULT_GLOBAL
+    }
+
+    private static class Trap implements Serializable {
+        private final KeyBinding keyBinding;
+        private final BindType bindType;
+        private final Component component;
+        private final String jsEvent;
+
+        private Trap(KeyBinding keyBinding, BindType bindType, Component component, String jsEvent) {
+            this.keyBinding = Args.notNull(keyBinding, "keyBinding");
+            this.bindType = Args.notNull(bindType, "bindType");
+            this.component = Args.notNull(component, "component");
+            this.jsEvent = jsEvent;
+        }
     }
 
     /**
-     * Render to the web response whatever the component wants to contribute to the head section.
-     *
-     * @param component component this behavior is attached to
-     * @param response Response object
+     * A list of all registered mouse traps
      */
-    public void renderHead(final Component component, IHeaderResponse response) {
-        super.renderHead(component, response);
+    private final List<Trap> traps = new ArrayList<Trap>();
 
-        if (bindings.size() > 0) {
-            response.render(JavaScriptHeaderItem.forReference(new JavaScriptResourceReference(Mousetrap.class, "mousetrap.min.js")));
-
-            StringBuffer mousetrapBinds = getMousetrapBinds(BIND, bindings);
-            response.render(OnDomReadyHeaderItem.forScript(mousetrapBinds));
-        }
-
-        if (globalBindings.size() > 0) {
-            response.render(JavaScriptHeaderItem.forReference(new JavaScriptResourceReference(Mousetrap.class, "mousetrap-global.min.js")));
-
-            StringBuffer mousetrapBinds = getMousetrapBinds(BIND_GLOBAL, globalBindings);
-            response.render(OnDomReadyHeaderItem.forScript(mousetrapBinds));
-        }
-
-        if (defaultBindings.size() > 0) {
-            StringBuffer mousetrapBinds = getMousetrapBinds(BIND_DEFAULT, defaultBindings);
-            response.render(OnDomReadyHeaderItem.forScript(mousetrapBinds));
-        }
-
-        if (defaultGlobalBindings.size() > 0) {
-            response.render(JavaScriptHeaderItem.forReference(new JavaScriptResourceReference(Mousetrap.class, "mousetrap-global.min.js")));
-
-            StringBuffer mousetrapBinds = getMousetrapBinds(BIND_DEFAULT_GLOBAL, defaultGlobalBindings);
-            response.render(OnDomReadyHeaderItem.forScript(mousetrapBinds));
-        }
-    }
+    /**
+     * A flag indicating whether {@link com.mysticcoders.wicket.mousetrap.MouseTrapGlobalJSReference}
+     * should be contributed.
+     * Switches its value to {@code true} as soon as a binding with type {@linkplain com.mysticcoders.wicket.mousetrap.Mousetrap.BindType#GLOBAL}
+     * or {@linkplain com.mysticcoders.wicket.mousetrap.Mousetrap.BindType#DEFAULT_GLOBAL} is added
+     */
+    private boolean renderGlobalJsReference = false;
 
     /**
      * Adds a key binding to Mousetrap for given behavior
      *
      * @param keyBinding keys to bind
-     * @param behavior behavior to execute upon binding being fired
      */
-    public void addBind(KeyBinding keyBinding, AbstractDefaultAjaxBehavior behavior) {
-        bindings.put(keyBinding, behavior);
+    public Mousetrap addBind(KeyBinding keyBinding, Component component) {
+        return addBind(keyBinding, component, "click", BindType.NORMAL);
+    }
+
+    public Mousetrap addBind(KeyBinding keyBinding, Component component, String jsEvent) {
+        return addBind(keyBinding, component, jsEvent, BindType.NORMAL);
+    }
+
+    public Mousetrap addBind(KeyBinding keyBinding, Component component, String jsEvent, BindType type) {
+        if (type == BindType.GLOBAL || type == BindType.DEFAULT_GLOBAL) {
+            renderGlobalJsReference = true;
+        }
+        traps.add(new Trap(keyBinding, type, component, jsEvent));
+        return this;
     }
 
     /**
-     * Adds a global key binding to Mousetrap for given behavior
+     * Renders the JS resources needed by this behavior and the JavaScript that registers the key bindings
      *
-     * - this will fire wherever your focus is, including text fields, any form element
-     *
-     * @param keyBinding keys to bind
-     * @param behavior behavior to execute upon binding being fired
+     * @param component The component this behavior is attached to
+     * @param response The header response to write to
      */
-    public void addGlobalBind(KeyBinding keyBinding, AbstractDefaultAjaxBehavior behavior) {
-        globalBindings.put(keyBinding, behavior);
+    public void renderHead(final Component component, IHeaderResponse response) {
+        super.renderHead(component, response);
+
+        if (traps.size() > 0) {
+            if (renderGlobalJsReference) {
+                response.render(JavaScriptHeaderItem.forReference(new MouseTrapGlobalJSReference()));
+            } else {
+                response.render(JavaScriptHeaderItem.forReference(new MouseTrapJSReference()));
+            }
+
+            CharSequence mouseTrapJS = getMouseTraps(traps);
+            response.render(OnDomReadyHeaderItem.forScript(mouseTrapJS));
+        }
     }
 
     /**
-     * Adds a default key binding to Mousetrap for given behavior
+     * Constructs the JavaScript that registers the key bindings
      *
-     * - this will fire and override any default in the browser
-     *
-     * @param keyBinding keys to bind
-     * @param behavior behavior to execute upon binding being fired
+     * @param traps The list of added mouse traps
+     * @return the JavaScript that registers the key bindings
      */
-    public void addDefaultBind(KeyBinding keyBinding, AbstractDefaultAjaxBehavior behavior) {
-        defaultBindings.put(keyBinding, behavior);
+    private CharSequence getMouseTraps(List<Trap> traps)
+    {
+        StringBuilder mousetrapBinds = new StringBuilder();
+
+        for (Trap trap : traps) {
+            KeyBinding keyBinding = trap.keyBinding;
+            BindType bindType = trap.bindType;
+            Component component = trap.component;
+            String jsEvent = trap.jsEvent;
+
+            mousetrapBinds.append("Mousetrap.bind");
+            if (bindType == BindType.GLOBAL || bindType == BindType.DEFAULT_GLOBAL) {
+                mousetrapBinds.append("Global");
+            }
+            mousetrapBinds.append('(').append(keyBinding).append(", function() { ");
+
+            mousetrapBinds.append("jQuery('#").append(component.getMarkupId()).append("').triggerHandler('").append(jsEvent).append("');");
+
+            if (bindType == BindType.DEFAULT || bindType == BindType.DEFAULT_GLOBAL) {
+                mousetrapBinds.append("return false;");
+            }
+
+            mousetrapBinds.append('}');
+
+            if (keyBinding.getEventType() != null) {
+                mousetrapBinds.append(", '")
+                        .append(keyBinding.getEventType())
+                        .append('\'');
+            }
+
+            mousetrapBinds.append(");\n");
+        }
+
+        return mousetrapBinds;
     }
-
-    /**
-     * Adds a default global key binding to Mousetrap for given behavior
-     *
-     * - this will fire wherever your focus is, including text fields, any form element
-     * - and it will fire and override any default in the browser
-     *
-     * @param keyBinding keys to bind
-     * @param behavior behavior to execute upon binding being fired
-     */
-    public void addDefaultGlobalBind(KeyBinding keyBinding, AbstractDefaultAjaxBehavior behavior) {
-        defaultGlobalBindings.put(keyBinding, behavior);
-    }
-
-
-
 }

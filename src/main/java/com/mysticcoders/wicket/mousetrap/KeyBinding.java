@@ -3,6 +3,7 @@ package com.mysticcoders.wicket.mousetrap;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * KeyBinding for mousetrap.js
@@ -44,20 +45,24 @@ public class KeyBinding implements Serializable {
     public static final String EVENT_KEYDOWN = "keydown";
     public static final String EVENT_KEYUP = "keyup";
 
-    private String eventType = null;
+    private final String eventType;
 
     private List<String> keysOptions = new ArrayList<String>();
 
-    public KeyBinding() { }
+    public KeyBinding() {
+        this(null);
+    }
 
     /**
      * If we want to capture a specific key event
      *
-     * @param eventType one of keypress, keydown, keyup
+     * @param eventType one of keypress, keydown, keyup or {@code null}
      */
     public KeyBinding(String eventType) {
-        if (EVENT_KEYPRESS.equals(eventType) || EVENT_KEYDOWN.equals(eventType) || EVENT_KEYUP.equals(eventType)) {
-            this.eventType = eventType;
+        if (EVENT_KEYPRESS.equalsIgnoreCase(eventType) || EVENT_KEYDOWN.equalsIgnoreCase(eventType) || EVENT_KEYUP.equalsIgnoreCase(eventType)) {
+            this.eventType = eventType.toLowerCase(Locale.ENGLISH);
+        } else {
+            this.eventType = null;
         }
     }
 
@@ -69,14 +74,16 @@ public class KeyBinding implements Serializable {
      * @return KeyBinding object
      */
     private KeyBinding addKeys(boolean combo, String... keys) {
-        if (keys == null || keys.length == 0) return this;
-
-        StringBuilder watchKeys = new StringBuilder();
-        for (String key : keys) {
-            watchKeys.append(key).append(combo ? "+" : " ");
+        if (keys != null && keys.length > 0)
+        {
+            StringBuilder watchKeys = new StringBuilder();
+            for (String key : keys)
+            {
+                watchKeys.append(key).append(combo ? "+" : " ");
+            }
+            watchKeys.deleteCharAt(watchKeys.length() - 1);
+            keysOptions.add(watchKeys.toString());
         }
-        watchKeys.deleteCharAt(watchKeys.length() - 1);
-        keysOptions.add(watchKeys.toString());
 
         return this;
     }
@@ -118,16 +125,16 @@ public class KeyBinding implements Serializable {
     public String toString() {
         StringBuilder mtKeys = new StringBuilder();
         if (keysOptions.size() > 1) {
-            mtKeys.append("[");
+            mtKeys.append('[');
         }
 
         for (String key : keysOptions) {
-            mtKeys.append("'").append(key).append("',");
+            mtKeys.append('\'').append(key).append("',");
         }
         mtKeys.deleteCharAt(mtKeys.length() - 1);
 
         if (keysOptions.size() > 1) {
-            mtKeys.append("]");
+            mtKeys.append(']');
         }
         return mtKeys.toString();
     }
