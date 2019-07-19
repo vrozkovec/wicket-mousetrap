@@ -1,10 +1,22 @@
-*.class
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
 
+# Intellij
+.idea/
+*.iml
+*.iws
+
+# Mac
 .DS_Store
-target
 
-# Package Files #
-*.jar
-*.war
-*.ear
-*.i*
+# Maven
+log/
+target/
+
+# Misc
+/velocity.log*
+/hs_err*
+/.factorypath
